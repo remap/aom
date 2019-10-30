@@ -98,6 +98,8 @@ static void
 Packetizer_finalize(PacketizerStruct *self)
 {
   aom_codec_destroy(&self->codec);
+  self->codec.iface = NULL;
+  self->codec.priv = NULL;
 }
 
 /**
