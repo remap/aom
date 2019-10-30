@@ -30,10 +30,21 @@ static void fix_framerate(int *num, int *den) {
 
 int file_is_ivf(struct AvxInputContext *input_ctx) {
   char raw_hdr[32];
+
+  size_t nBytesRead = fread(raw_hdr, 1, 32, input_ctx->file);
+  return file_is_ivf_raw_hdr(input_ctx, raw_hdr, nBytesRead);
+}
+
+int file_is_ivf_raw_hdr
+  (struct AvxInputContext *input_ctx, const char *raw_hdr, size_t nBytesRead) {
   int is_ivf = 0;
 
-  if (fread(raw_hdr, 1, 32, input_ctx->file) == 32) {
+  if (nBytesRead == 32) {
     if (memcmp(IVF_SIGNATURE, raw_hdr, 4) == 0) {
+      if (gPacketizerMode == PACKETIZER_MODE_WRITE_PACKETS) {
+        gPacketizer->writePacket
+          (gPacketizer, "video.fileheader.dat", (const uint8_t*)raw_hdr, 32);
+      }
       is_ivf = 1;
 
       if (mem_get_le16(raw_hdr + 4) != 0) {
@@ -53,7 +64,9 @@ int file_is_ivf(struct AvxInputContext *input_ctx) {
   }
 
   if (!is_ivf) {
-    rewind(input_ctx->file);
+    if (gPacketizerMode != PACKETIZER_MODE_READ_PACKETS)
+      // Only rewind if reading from the video file.
+      rewind(input_ctx->file);
     input_ctx->detect.buf_read = 0;
   } else {
     input_ctx->detect.position = 4;
@@ -66,9 +79,48 @@ int ivf_read_frame(FILE *infile, uint8_t **buffer, size_t *bytes_read,
   char raw_header[IVF_FRAME_HDR_SZ] = { 0 };
   size_t frame_size = 0;
 
+  // A new frame.
+  if (gPacketizerMode == PACKETIZER_MODE_WRITE_PACKETS ||
+      gPacketizerMode == PACKETIZER_MODE_READ_PACKETS) {
+    if (gPacketizerMode == PACKETIZER_MODE_WRITE_PACKETS &&
+        gPacketizer->frameIndex >= 0) {
+
+      // Write the previous frame's non-tile data.
+      // Note: This also writes the final frame because fread has not read EOF yet.
+      char nameSuffix[256];
+      sprintf(nameSuffix, "video.frame.%03d.nontile.dat",
+              gPacketizer->frameIndex);
+      gPacketizer->writePacket
+        (gPacketizer, nameSuffix, gPacketizer->nonTileContent,
+         gPacketizer->nonTileContentSize);
+
+      // Reset for a new frame.
+      gPacketizer->nonTileContentSize = 0;
+    }
+
+    ++gPacketizer->frameIndex;
+  }
+
   if (fread(raw_header, IVF_FRAME_HDR_SZ, 1, infile) != 1) {
     if (!feof(infile)) warn("Failed to read frame size");
   } else {
+    if (gPacketizerMode == PACKETIZER_MODE_WRITE_PACKETS) {
+      // The non-tile packet starts with a 4-byte big endian number of the first
+      // tile group index which will be used.
+      uint32_t nextTileGroupIndex = (uint32_t)(gPacketizer->tileGroupIndex + 1);
+
+      // Write nextTileGroupIndex as 4-byte big endian.
+      uint8_t buffer[4];
+      buffer[0] = (nextTileGroupIndex >> 24) & 0xff;
+      buffer[1] = (nextTileGroupIndex >> 16) & 0xff;
+      buffer[2] = (nextTileGroupIndex >> 8) & 0xff;
+      buffer[3] = nextTileGroupIndex & 0xff;
+      Packetizer_appendNonTileContent(gPacketizer, buffer, 4);
+
+      // Write the frame header to the non-tile data.
+      Packetizer_appendNonTileContent
+        (gPacketizer, (const uint8_t*)raw_header, IVF_FRAME_HDR_SZ);
+    }
     frame_size = mem_get_le32(raw_header);
 
     if (frame_size > 256 * 1024 * 1024) {
