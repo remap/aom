@@ -4,6 +4,7 @@
 #define NDN_PACKETIZER_HPP
 
 #include "common/ivfdec.h"
+#include <ndn-cpp/util/blob.hpp>
 
 namespace av1 {
 
@@ -58,6 +59,12 @@ public:
       return false;
 
     return true;
+  }
+
+  bool
+  startRead(const ndn::Blob& fileHeader)
+  {
+    return startRead(fileHeader.buf(), fileHeader.size());
   }
 
   /**
@@ -116,6 +123,12 @@ public:
       return false;
 
     return true;
+  }
+
+  bool
+  decodeFrame(const ndn::Blob& nonTileData)
+  {
+    return decodeFrame(nonTileData.buf(), nonTileData.size());
   }
 
   /**
