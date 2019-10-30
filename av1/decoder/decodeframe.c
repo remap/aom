@@ -28,6 +28,7 @@
 #include "aom_ports/mem_ops.h"
 #include "aom_scale/aom_scale.h"
 #include "aom_util/aom_thread.h"
+#include "common/ivfdec.h"
 
 #if CONFIG_BITSTREAM_DEBUG || CONFIG_MISMATCH_DEBUG
 #include "aom_util/debug_util.h"
@@ -3038,6 +3039,20 @@ static const uint8_t *decode_tiles(AV1Decoder *pbi, const uint8_t *data,
     raw_data_end = get_ls_tile_buffers(pbi, data, data_end, tile_buffers);
   else
 #endif  // EXT_TILE_DEBUG
+   if (gPacketizerMode == PACKETIZER_MODE_READ_PACKETS) {
+    // Get the tile data from the packets.
+    // Clear the tile buffers.
+    for (int row = 0; row < MAX_TILE_ROWS; ++row) {
+      for (int col = 0; col < MAX_TILE_COLS; ++col)
+        pbi->tile_buffers[row][col].data = NULL;
+    }
+
+    // getTileBuffers will set only the tiles it wants.
+    if (!(*gPacketizer->getTileBuffers)
+          (gPacketizer, gPacketizer->tileGroupIndex, pbi->tile_buffers))
+      return data;
+   }
+   else
     get_tile_buffers(pbi, data, data_end, tile_buffers, start_tile, end_tile);
 
   if (pbi->tile_data == NULL || n_tiles != pbi->allocated_tiles) {
@@ -3065,9 +3080,15 @@ static const uint8_t *decode_tiles(AV1Decoder *pbi, const uint8_t *data,
     const int row = inv_row_order ? tile_rows - 1 - tile_row : tile_row;
 
     for (tile_col = tile_cols_start; tile_col < tile_cols_end; ++tile_col) {
+      if (gPacketizerMode == PACKETIZER_MODE_WRITE_PACKETS)
+        // We don't need to decode the video when writing packets.
+        continue;
       const int col = inv_col_order ? tile_cols - 1 - tile_col : tile_col;
       TileDataDec *const tile_data = pbi->tile_data + row * cm->tile_cols + col;
       const TileBufferDec *const tile_bs_buf = &tile_buffers[row][col];
+      if (!tile_bs_buf->data)
+        // getTileBuffers() for PACKETIZER_MODE_READ_PACKETS didn't set this tile.
+        continue;
 
       if (row * cm->tile_cols + col < start_tile ||
           row * cm->tile_cols + col > end_tile)
@@ -3113,6 +3134,14 @@ static const uint8_t *decode_tiles(AV1Decoder *pbi, const uint8_t *data,
     return raw_data_end;
   }
   TileDataDec *const tile_data = pbi->tile_data + end_tile;
+
+  if (gPacketizerMode == PACKETIZER_MODE_WRITE_PACKETS)
+    // Skip to the end of the tile group.
+    return data_end;
+  else if (gPacketizerMode == PACKETIZER_MODE_READ_PACKETS)
+    // data_end includes the original tile group size from the frame header.
+    // Ignore it and don't advance the data pointer.
+    return data;
 
   return aom_reader_find_end(&tile_data->bit_reader);
 }
