@@ -86,6 +86,8 @@ Packetizer_initialize(PacketizerStruct *self)
   self->nonTileContentSize = 0;
   self->writePacket = NULL;
   self->getTileBuffers = NULL;
+  self->codec.iface = NULL;
+  self->codec.priv = NULL;
 
   if (!gPacketizer)
     // Set the global pointer.
