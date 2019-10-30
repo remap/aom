@@ -24,6 +24,11 @@
 #include "av1/decoder/decoder.h"
 #include "av1/decoder/decodeframe.h"
 #include "av1/decoder/obu.h"
+#include "common/ivfdec.h"
+
+// Put these here instead of in ivfdev.c, which is not linked by every executable.
+PacketizerMode gPacketizerMode = PACKETIZER_MODE_NONE;
+PacketizerStruct *gPacketizer = NULL;
 
 aom_codec_err_t aom_get_num_layers_from_operating_point_idc(
     int operating_point_idc, unsigned int *number_spatial_layers,
@@ -329,7 +334,7 @@ static int32_t read_tile_group_header(AV1Decoder *pbi,
 static uint32_t read_one_tile_group_obu(
     AV1Decoder *pbi, struct aom_read_bit_buffer *rb, int is_first_tg,
     const uint8_t *data, const uint8_t *data_end, const uint8_t **p_data_end,
-    int *is_last_tg, int tile_start_implicit) {
+    int *is_last_tg, int tile_start_implicit, const uint8_t **p_data_before_tiles) {
   AV1_COMMON *const cm = &pbi->common;
   int start_tile, end_tile;
   int32_t header_size, tg_payload_size;
@@ -341,6 +346,7 @@ static uint32_t read_one_tile_group_obu(
                                        tile_start_implicit);
   if (header_size == -1 || byte_alignment(cm, rb)) return 0;
   data += header_size;
+ *p_data_before_tiles = data;
   av1_decode_tg_tiles_and_wrapup(pbi, data, data_end, p_data_end, start_tile,
                                  end_tile, is_first_tg);
 
@@ -767,6 +773,9 @@ int aom_decode_frame_from_obus(struct AV1Decoder *pbi, const uint8_t *data,
 
   // decode frame as a series of OBUs
   while (!frame_decoding_finished && cm->error.error_code == AOM_CODEC_OK) {
+    const uint8_t *saveData = data;
+    int didTileGroup = 0;
+    const uint8_t *saveDataBeforeTiles;
     struct aom_read_bit_buffer rb;
     size_t payload_size = 0;
     size_t decoded_payload_size = 0;
@@ -797,10 +806,13 @@ int aom_decode_frame_from_obus(struct AV1Decoder *pbi, const uint8_t *data,
     // doesn't cause 'data' to advance past 'data_end'.
     data += bytes_read;
 
+   if (gPacketizerMode != PACKETIZER_MODE_READ_PACKETS) {
+    // Only check this if not reading packets.
     if ((size_t)(data_end - data) < payload_size) {
       cm->error.error_code = AOM_CODEC_CORRUPT_FRAME;
       return -1;
     }
+   }
 
     cm->temporal_layer_id = obu_header.temporal_layer_id;
     cm->spatial_layer_id = obu_header.spatial_layer_id;
@@ -901,10 +913,18 @@ int aom_decode_frame_from_obus(struct AV1Decoder *pbi, const uint8_t *data,
           cm->error.error_code = AOM_CODEC_CORRUPT_FRAME;
           return -1;
         }
-        decoded_payload_size += read_one_tile_group_obu(
+        didTileGroup = 1;
+        if (gPacketizerMode != PACKETIZER_MODE_NONE)
+          ++gPacketizer->tileGroupIndex;
+        size_t tile_group_obu_size = read_one_tile_group_obu(
             pbi, &rb, is_first_tg_obu_received, data + obu_payload_offset,
             data + payload_size, p_data_end, &frame_decoding_finished,
-            obu_header.type == OBU_FRAME);
+            obu_header.type == OBU_FRAME, &saveDataBeforeTiles);
+        decoded_payload_size += tile_group_obu_size;
+        if (gPacketizerMode == PACKETIZER_MODE_READ_PACKETS)
+          // The payload_size from the frame header includes the tile data, which is
+          // not in the data buffer. Adjust it to the returned size.
+          payload_size = tile_group_obu_size;
         if (cm->error.error_code != AOM_CODEC_OK) return -1;
         is_first_tg_obu_received = 0;
         if (frame_decoding_finished) pbi->seen_frame_header = 0;
@@ -948,11 +968,14 @@ int aom_decode_frame_from_obus(struct AV1Decoder *pbi, const uint8_t *data,
         break;
     }
 
+   if (gPacketizerMode != PACKETIZER_MODE_READ_PACKETS) {
+    // Only check this if not reading packets.
     // Check that the signalled OBU size matches the actual amount of data read
     if (decoded_payload_size > payload_size) {
       cm->error.error_code = AOM_CODEC_CORRUPT_FRAME;
       return -1;
     }
+   }
 
     // If there are extra padding bytes, they should all be zero
     while (decoded_payload_size < payload_size) {
@@ -964,6 +987,31 @@ int aom_decode_frame_from_obus(struct AV1Decoder *pbi, const uint8_t *data,
     }
 
     data += payload_size;
+
+    if (gPacketizerMode == PACKETIZER_MODE_WRITE_PACKETS) {
+      if (!didTileGroup)
+        // Append to the existing frame preamble, leading up to the tiles.
+        Packetizer_appendNonTileContent(gPacketizer, saveData, data - saveData);
+      else {
+        // Append the OBU headers before the tiles to the non-tile data.
+        Packetizer_appendNonTileContent
+          (gPacketizer, saveData, saveDataBeforeTiles - saveData);
+
+        // Write the tiles.
+        // Note: This skips the 4-byte header before every tile (except the final
+        // tile which has no such header).
+        for (int row = 0; row < pbi->common.tile_rows; ++row) {
+          for (int col = 0; col < pbi->common.tile_cols; ++col) {
+            char nameSuffix[256];
+            sprintf(nameSuffix, "video.tile.%d.%d.%d.dat",
+              gPacketizer->tileGroupIndex, row, col);
+            gPacketizer->writePacket
+              (gPacketizer, nameSuffix, pbi->tile_buffers[row][col].data,
+               pbi->tile_buffers[row][col].size);
+          }
+        }
+      }
+    }
   }
 
   if (cm->error.error_code != AOM_CODEC_OK) return -1;
