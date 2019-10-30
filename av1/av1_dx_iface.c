@@ -34,6 +34,7 @@
 #include "av1/decoder/obu.h"
 
 #include "av1/av1_iface_common.h"
+#include "common/ivfdec.h"
 
 struct aom_codec_alg_priv {
   aom_codec_priv_t base;
@@ -297,7 +298,10 @@ static aom_codec_err_t decoder_peek_si_internal(const uint8_t *data,
   while (1) {
     data += bytes_read;
     data_sz -= bytes_read;
+   if (gPacketizerMode != PACKETIZER_MODE_READ_PACKETS) {
+    // Only check this if not reading packets.
     if (data_sz < payload_size) return AOM_CODEC_CORRUPT_FRAME;
+   }
     // Check that the selected OBU is a sequence header
     if (obu_header.type == OBU_SEQUENCE_HEADER) {
       // Sanity check on sequence header size
