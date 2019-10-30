@@ -1003,7 +1003,7 @@ int aom_decode_frame_from_obus(struct AV1Decoder *pbi, const uint8_t *data,
         for (int row = 0; row < pbi->common.tile_rows; ++row) {
           for (int col = 0; col < pbi->common.tile_cols; ++col) {
             char nameSuffix[256];
-            sprintf(nameSuffix, "video.tile.%d.%d.%d.dat",
+            sprintf(nameSuffix, "tile/%d/%d/%d",
               gPacketizer->tileGroupIndex, row, col);
             gPacketizer->writePacket
               (gPacketizer, nameSuffix, pbi->tile_buffers[row][col].data,

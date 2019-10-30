@@ -43,7 +43,7 @@ int file_is_ivf_raw_hdr
     if (memcmp(IVF_SIGNATURE, raw_hdr, 4) == 0) {
       if (gPacketizerMode == PACKETIZER_MODE_WRITE_PACKETS) {
         gPacketizer->writePacket
-          (gPacketizer, "video.fileheader.dat", (const uint8_t*)raw_hdr, 32);
+          (gPacketizer, "fileheader", (const uint8_t*)raw_hdr, 32);
       }
       is_ivf = 1;
 
@@ -88,8 +88,7 @@ int ivf_read_frame(FILE *infile, uint8_t **buffer, size_t *bytes_read,
       // Write the previous frame's non-tile data.
       // Note: This also writes the final frame because fread has not read EOF yet.
       char nameSuffix[256];
-      sprintf(nameSuffix, "video.frame.%03d.nontile.dat",
-              gPacketizer->frameIndex);
+      sprintf(nameSuffix, "nontile/%d", gPacketizer->frameIndex);
       gPacketizer->writePacket
         (gPacketizer, nameSuffix, gPacketizer->nonTileContent,
          gPacketizer->nonTileContentSize);
