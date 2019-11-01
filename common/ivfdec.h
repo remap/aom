@@ -47,7 +47,7 @@ typedef void (*Packetizer_WritePacketFunction)
    size_t contentSize);
 
 typedef int (*Packetizer_GetTileBuffersFunction)
-  (struct PacketizerStruct *self, int tileGroupIndex,
+  (struct PacketizerStruct *self, int tileGroupIndex, int nRows, int nColumns,
    TileBufferDec (*const tileBuffers)[MAX_TILE_COLS]);
 
 /**

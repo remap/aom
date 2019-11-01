@@ -3049,7 +3049,8 @@ static const uint8_t *decode_tiles(AV1Decoder *pbi, const uint8_t *data,
 
     // getTileBuffers will set only the tiles it wants.
     if (!(*gPacketizer->getTileBuffers)
-          (gPacketizer, gPacketizer->tileGroupIndex, pbi->tile_buffers))
+          (gPacketizer, gPacketizer->tileGroupIndex, tile_rows, tile_cols,
+           pbi->tile_buffers))
       return data;
    }
    else

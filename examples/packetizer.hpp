@@ -164,13 +164,16 @@ public:
    * Your class should override this as described by decodeFrame().
    * @param tileGroupIndex The tile group index to use for fetching the correct
    * tile packets.
+   * @param nRows The number of tile rows in the frame.
+   * @param nColumns The number of tile columns in the frame.
    * @param tileBuffers A pointer to the array of tile buffers to be filled as
    * needed. When this is called, all [][].data are initialized to NULL.
    * @return True for success, false for error.
    */
   virtual bool
   getTileBuffers
-    (int tileGroupIndex, TileBufferDec (*const tileBuffers)[MAX_TILE_COLS])
+    (int tileGroupIndex, int nRows, int nColumns,
+     TileBufferDec (*const tileBuffers)[MAX_TILE_COLS])
   {
     return false;
   }
@@ -190,10 +193,11 @@ private:
    * Assume self is a pointer to a Packetizer and call its virtual getTileBuffers().
    */
   static int getTileBuffersFunction
-    (struct PacketizerStruct *self, int tileGroupIndex,
+    (struct PacketizerStruct *self, int tileGroupIndex, int nRows, int nColumns,
      TileBufferDec (*const tileBuffers)[MAX_TILE_COLS])
   {
-    bool success = ((Packetizer*)self)->getTileBuffers(tileGroupIndex, tileBuffers);
+    bool success = ((Packetizer*)self)->getTileBuffers
+      (tileGroupIndex, nRows, nColumns, tileBuffers);
     return success ? 1 : 0;
   }
 };
