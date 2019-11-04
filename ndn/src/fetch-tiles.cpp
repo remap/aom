@@ -68,6 +68,9 @@ public:
     finalFrameIndex_(-1), maxRequestedFrameIndex_(-1),
     maxRequestedTileGroupIndex_(-1), enabled_(true)
   {
+    nontileNamespace_.addOnStateChanged
+      (bind(&PacketizerFromNdn::onNontileStateChanged, this,
+       _1, _2, _3, _4));
   }
 
   /**
@@ -120,13 +123,22 @@ public:
 
   // A set of the pair row,column .
   set<pair<int, int>> tileNumbers_;
-  int finalFrameIndex_;
   bool enabled_;
 
 private:
+  /**
+   * This is called when there is a timeout/nack for a packet under the nontile
+   * prefix, which we can use to determine finalFrameIndex_.
+   */
+  void
+  onNontileStateChanged
+    (Namespace& nameSpace, Namespace& changedNamespace, NamespaceState state,
+     uint64_t callbackId);
+
   Namespace& nontileNamespace_;
   Namespace& tileNamespace_;
   FILE* outFile_;
+  int finalFrameIndex_;
   int maxRequestedFrameIndex_;
   int maxRequestedTileGroupIndex_;
 };
@@ -306,6 +318,33 @@ PacketizerFromNdn::requestNewObjects()
   }
 }
 
+void
+PacketizerFromNdn::onNontileStateChanged
+  (Namespace& nameSpace, Namespace& changedNamespace, NamespaceState state,
+   uint64_t callbackId) {
+  if (state == NamespaceState_INTEREST_TIMEOUT ||
+      state == NamespaceState_INTEREST_NETWORK_NACK) {
+    // Get the index from the name.
+    const Name::Component& indexComponent =
+      changedNamespace.getName()[nontileNamespace_.getName().size()];
+    int index = atoi(indexComponent.toEscapedString().c_str());
+    if (index == 0) {
+      cout << "Timeout/nack fetching the first frame " << changedNamespace.getName() << endl;
+      enabled_ = false;
+      return;
+    }
+
+    if (finalFrameIndex_ < 0)
+      // finalFrameIndex_ is not set yet.
+      finalFrameIndex_ = index - 1;
+    else if (index - 1 < finalFrameIndex_)
+      // This is an earlier timed-out frame, so reduce the finalFrameIndex_.
+      finalFrameIndex_ = index - 1;
+    // We may already have all the needed objects, so check.
+    maybeDecodeFrame();
+  }
+}
+
 int main(int argc, char **argv) {
   // Silence the warning from Interest wire encode.
   Interest::setDefaultCanBePrefix(true);
@@ -344,37 +383,6 @@ int main(int argc, char **argv) {
   // At first we only fetch the nontile frame info but no tiles. getTileBuffers()
   // will get the number of tile rows and columns, and maybeDecodeFrame() will
   // restart to get the tiles.
-
-  Namespace& nontileNamespace = prefixNamespace[Name("nontile")[0]];
-
-  // We're finished when there is a timeout/nack in fetching a nontile packet.
-  auto onStateChanged = [&]
-    (Namespace& nameSpace, Namespace& changedNamespace, NamespaceState state,
-     uint64_t callbackId) {
-    if ((state == NamespaceState_INTEREST_TIMEOUT ||
-         state == NamespaceState_INTEREST_NETWORK_NACK) &&
-        nontileNamespace.getName().isPrefixOf(changedNamespace.getName())) {
-      // Get the index from the name.
-      const Name::Component& indexComponent =
-        changedNamespace.getName()[nontileNamespace.getName().size()];
-      int index = atoi(indexComponent.toEscapedString().c_str());
-      if (index == 0) {
-        cout << "Timeout/nack fetching the first frame " << changedNamespace.getName() << endl;
-        packetizer.enabled_ = false;
-        return;
-      }
-
-      if (packetizer.finalFrameIndex_ < 0)
-        // finalFrameIndex_ is not set yet.
-        packetizer.finalFrameIndex_ = index - 1;
-      else if (index - 1 < packetizer.finalFrameIndex_)
-        // This is an earlier timed-out frame, so reduce the finalFrameIndex_.
-        packetizer.finalFrameIndex_ = index - 1;
-      // We may already have all the needed objects, so check.
-      packetizer.maybeDecodeFrame();
-    }
-  };
-  prefixNamespace.addOnStateChanged(onStateChanged);
 
   auto onFileheaderObject = [&]
     (const ptr_lib::shared_ptr<ContentMetaInfoObject>& contentMetaInfo,
