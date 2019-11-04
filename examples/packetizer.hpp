@@ -16,9 +16,7 @@ class Packetizer : public PacketizerStruct {
 public:
   Packetizer()
   {
-    Packetizer_initialize(this);
-    PacketizerStruct::writePacket = writePacketFunction;
-    PacketizerStruct::getTileBuffers = getTileBuffersFunction;
+    construct();
   }
 
   ~Packetizer()
@@ -38,12 +36,18 @@ public:
 
   /**
    * Decode the file header to start reading a video and set up this->codec. On
-   * return, this->input_ctx has the width and height.
+   * return, this->input_ctx has the width and height. Note: This initially
+   * calls Packetizer_finalize() and Packetizer_initialize() again to clear any
+   * previous state.
    * @return True for success, false for error.
    */
   bool
   startRead(const uint8_t *fileHeader, size_t fileHeaderSize)
   {
+    // Clear any previous state.
+    Packetizer_finalize(this);
+    construct();
+
     gPacketizerMode = PACKETIZER_MODE_READ_PACKETS;
 
     // Skip AvxVideoReader and aom_video_reader_open.
@@ -179,6 +183,14 @@ public:
   }
 
 private:
+  void
+  construct()
+  {
+    Packetizer_initialize(this);
+    PacketizerStruct::writePacket = writePacketFunction;
+    PacketizerStruct::getTileBuffers = getTileBuffersFunction;
+  }
+
   /**
    * Assume self is a pointer to a Packetizer and call its virtual writePacket().
    */
