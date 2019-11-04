@@ -20,8 +20,8 @@
  */
 
 /**
- * Fetch NDN packets that were stored in the repo by store-tiles, and use them
- * to decode the AV1 video.
+ * Fetch NDN generalized objects that were stored in the repo by store-tiles,
+ * and use them to decode the AV1 video.
  */
 
 #include <stdio.h>

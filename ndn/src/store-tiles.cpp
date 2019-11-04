@@ -21,7 +21,8 @@
 
 /**
  * Imitate aom/examples/simple_decoder, but use Packetizer.startWrite() so that
- * the decoder calls writePacket for each part of the AV1 file.
+ * the decoder calls writePacket for each part of the AV1 file, which we
+ * override to store generalized objects in the repo.
  */
 
 #include <stdio.h>
