@@ -35,6 +35,14 @@ void usage_exit(void) {
  */
 class PacketizerFromNdn : public Packetizer {
 public:
+  /**
+   * Create a PacketizerFromNdn to use the "nontile" and "tile" child
+   * namespaces of the given prefixNamespace. When ready, write the decoded
+   * raw frame to outFile.
+   * @param prefixNamespace The prefix Namespace with "nontile" and "tile"
+   * children.
+   * @param outFile The raw output video file, which should already be open.
+   */
   PacketizerFromNdn(Namespace& prefixNamespace, FILE* outFile)
   : nontileNamespace_(prefixNamespace[Name("nontile")[0]]),
     tileNamespace_(prefixNamespace[Name("tile")[0]]), outFile_(outFile),
@@ -137,10 +145,14 @@ PacketizerFromNdn::getTileBuffers
     string tileUri = tileNamespace_.getName().toUri() + "/" + tileSuffix;
     Namespace& tile = tileNamespace_[Name(tileUri)];
 
-    if (tile.getObject()) {
-      tileBuffers[row][column].data = tile.getBlobObject().buf();
-      tileBuffers[row][column].size = tile.getBlobObject().size();
+    if (!tile.getObject()) {
+      // We don't expect this. Just leave this tile blank.
+      cout << "Error: No tile data for tile " << tile.getName() << endl;
+      continue;
     }
+
+    tileBuffers[row][column].data = tile.getBlobObject().buf();
+    tileBuffers[row][column].size = tile.getBlobObject().size();
   }
 
   return true;
