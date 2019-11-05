@@ -56,14 +56,17 @@ class PacketizerFromNdn : public Packetizer {
 public:
   /**
    * Create a PacketizerFromNdn to use the "nontile" and "tile" child
-   * namespaces of the given prefixNamespace. When ready, write the decoded
-   * raw frame to outFile.
+   * namespaces of the given prefixNamespace. To start, call 
+   * fetchFileHeaderAndStart(). When ready, this will write each decoded raw
+   * frame to outFile. When finished, this sets enabled_ to false, so that you
+   * can stop calling maybeDecodeFrame().
    * @param prefixNamespace The prefix Namespace with "nontile" and "tile"
    * children.
    * @param outFile The raw output video file, which should already be open.
    */
   PacketizerFromNdn(Namespace& prefixNamespace, FILE* outFile)
-  : nontileNamespace_(prefixNamespace[Name("nontile")[0]]),
+  : prefixNamespace_(prefixNamespace),
+    nontileNamespace_(prefixNamespace[Name("nontile")[0]]),
     tileNamespace_(prefixNamespace[Name("tile")[0]]), outFile_(outFile),
     finalFrameIndex_(-1), maxRequestedFrameIndex_(-1),
     maxRequestedTileGroupIndex_(-1), enabled_(true)
@@ -79,6 +82,13 @@ public:
   virtual bool getTileBuffers
     (int tileGroupIndex, int nRows, int nColumns,
      TileBufferDec (*const tileBuffers)[MAX_TILE_COLS]);
+
+  /**
+   * Fetch the "fileheader" generalized object and use it to call startRead().
+   * Then call requestNewObjects() to begin fetching.
+   */
+  void
+  fetchFileHeaderAndStart();
 
   /**
    * Call this periodically to check if we can decode the next needed frame.
@@ -135,6 +145,7 @@ private:
     (Namespace& nameSpace, Namespace& changedNamespace, NamespaceState state,
      uint64_t callbackId);
 
+  Namespace& prefixNamespace_;
   Namespace& nontileNamespace_;
   Namespace& tileNamespace_;
   FILE* outFile_;
@@ -190,6 +201,25 @@ PacketizerFromNdn::getTileBuffers
 }
 
 void
+PacketizerFromNdn::fetchFileHeaderAndStart()
+{
+  auto onFileheaderObject = [&]
+    (const ptr_lib::shared_ptr<ContentMetaInfoObject>& contentMetaInfo,
+     Namespace& objectNamespace) {
+    if (!startRead(objectNamespace.getBlobObject())) {
+      cout << "fetchFileHeaderAndStart: Error is startRead()" << endl;
+      return;
+    }
+
+    // Start fetching generalized object packets.
+    requestNewObjects();
+  };
+
+  GeneralizedObjectHandler
+    (&prefixNamespace_[Name("fileheader")[0]], onFileheaderObject).objectNeeded();
+}
+
+void
 PacketizerFromNdn::maybeDecodeFrame()
 {
   if (!canDecodeFrame(frameIndex + 1))
@@ -212,8 +242,7 @@ PacketizerFromNdn::maybeDecodeFrame()
       return;
     }
 
-    Namespace& prefixNamespace = *nontileNamespace_.getParent();
-    Namespace& fileheader = prefixNamespace[Name("fileheader")[0]];
+    Namespace& fileheader = prefixNamespace_[Name("fileheader")[0]];
     if (!startRead(fileheader.getBlobObject())) {
       cout << "Error is startRead" << endl;
       return;
@@ -384,20 +413,7 @@ int main(int argc, char **argv) {
   // will get the number of tile rows and columns, and maybeDecodeFrame() will
   // restart to get the tiles.
 
-  auto onFileheaderObject = [&]
-    (const ptr_lib::shared_ptr<ContentMetaInfoObject>& contentMetaInfo,
-     Namespace& objectNamespace) {
-    if (!packetizer.startRead(objectNamespace.getBlobObject())) {
-      cout << "Error is startRead" << endl;
-      return;
-    }
-
-    // Start fetching nontile.
-    packetizer.requestNewObjects();
-  };
-
-  GeneralizedObjectHandler
-    (&prefixNamespace[Name("fileheader")[0]], onFileheaderObject).objectNeeded();
+  packetizer.fetchFileHeaderAndStart();
 
   while (packetizer.enabled_) {
     // Check if we have received the needed packets, and decode.
