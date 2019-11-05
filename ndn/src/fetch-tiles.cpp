@@ -77,13 +77,6 @@ public:
   }
 
   /**
-   * Override to read from NDN.
-   */
-  virtual bool getTileBuffers
-    (int tileGroupIndex, int nRows, int nColumns,
-     TileBufferDec (*const tileBuffers)[MAX_TILE_COLS]);
-
-  /**
    * Fetch the "fileheader" generalized object and use it to call startRead().
    * Then call requestNewObjects() to begin fetching.
    */
@@ -99,6 +92,27 @@ public:
   void
   maybeDecodeFrame();
 
+  /**
+   * Override to read from NDN.
+   */
+  virtual bool getTileBuffers
+    (int tileGroupIndex, int nRows, int nColumns,
+     TileBufferDec (*const tileBuffers)[MAX_TILE_COLS]);
+
+  // For frame index N, we must pre-fetch the tiles for tile groups up to
+  // index N + tileGroupAdvance, since the frame may decode these in advance.
+  static const int tileGroupAdvance = 5;
+
+  // While processing frame N, we want outstanding interests for all nontile
+  // objects up to frame N + framePipelineSize, and for all tile objects up to
+  // N + framePipelineSize + tileGroupAdvance.
+  static const int framePipelineSize = 30;
+
+  // A set of the pair row,column .
+  set<pair<int, int>> tileNumbers_;
+  bool enabled_;
+
+private:
   /**
    * Check if we have the nontile object and all the needed tile objects for
    * tile group indexes starting from startTileGroupIndex up to
@@ -122,20 +136,6 @@ public:
   void
   requestNewObjects();
 
-  // For frame index N, we must pre-fetch the tiles for tile groups up to
-  // index N + tileGroupAdvance, since the frame may decode these in advance.
-  static const int tileGroupAdvance = 5;
-
-  // While processing frame N, we want outstanding interests for all nontile
-  // objects up to frame N + framePipelineSize, and for all tile objects up to
-  // N + framePipelineSize + tileGroupAdvance.
-  static const int framePipelineSize = 30;
-
-  // A set of the pair row,column .
-  set<pair<int, int>> tileNumbers_;
-  bool enabled_;
-
-private:
   /**
    * This is called when there is a timeout/nack for a packet under the nontile
    * prefix, which we can use to determine finalFrameIndex_.
