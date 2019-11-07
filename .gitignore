@@ -17,6 +17,7 @@ TAGS
 /ndn/bin/*
 /ndn/libs/*
 /ndn/.libs/*
+/aom_build
 
 # Emacs temp files
 *~
