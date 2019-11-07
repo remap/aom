@@ -36,7 +36,7 @@
 #include "common/ivfdec.h"
 #include "packetizer.hpp"
 #include <cnl-cpp/generalized-object/generalized-object-handler.hpp>
-#include <storage/storage-engine.hpp>
+#include "../contrib/fast-repo/storage-engine.hpp"
 
 using namespace std;
 using namespace av1;
