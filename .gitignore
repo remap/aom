@@ -3,7 +3,6 @@ cmbuild
 .cproject
 .project
 .vscode
-.gitignore
 TAGS
 
 # Compiled files
